@@ -2,8 +2,12 @@
 
 ## Dependencies
 
+- https://github.com/docsifyjs/docsify  
+  Copyright (c) 2016-2024 Docsify Contributors  
+  Licensed under the MIT License (copy below)
+
 - https://github.com/docsifyjs/docsify-template  
-  Copyright (c) 2021-2024 docsifyjs  
+  Copyright (c) 2021-2024 Docsify Contributors  
   Licensed under the MIT License (copy below)
 
 ## MIT License
