@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -13,11 +14,13 @@ const indexFilename = "index.html"
 
 func main() {
 	parameters := []parameter{
-		newParam("v", "docsify version", "{{v}}", "latest"),
-		newParam("t", "title string", "{{t}}", "Dokumentation"),
-		newParam("l", "html lang param", "{{l}}", "de"),
-		newParam("sp", "search placeholder", "{{sp}}", "Suche"),
-		newParam("spe", "empty search result text", "{{spe}}", "Keine Ergebnisse gefunden"),
+		newStringParam("v", "docsify version", "{{v}}", "latest"),
+		newStringParam("t", "title string", "{{t}}", "Dokumentation"),
+		newStringParam("l", "html lang param", "{{l}}", "de"),
+		newStringParam("sp", "search placeholder", "{{sp}}", "Suche"),
+		newStringParam("spe", "empty search result text", "{{spe}}", "Keine Ergebnisse gefunden"),
+		newIntParam("sie", "search index expiration time in millis", "'{{sie}}'", 3600000),
+		newStringParam("sin", "search index namespace", "{{sin}}", "docsify-base-namespace"),
 	}
 	portFlag := flag.Int("p", 80, "port to listen on")
 	flag.Parse()
@@ -32,7 +35,13 @@ func main() {
 	}
 }
 
-type parameter struct {
+type parameter interface {
+	getName() string
+	getFilePlaceholder() string
+	getValue() string
+}
+
+type stringParameter struct {
 	commandLineFlag string
 	name            string
 	filePlaceholder string
@@ -40,9 +49,52 @@ type parameter struct {
 	value           *string
 }
 
-func newParam(commandLineFlag, name, filePlaceholder, defaultValue string) parameter {
+func (p stringParameter) getName() string {
+	return p.name
+}
+
+func (p stringParameter) getFilePlaceholder() string {
+	return p.filePlaceholder
+}
+
+func (p stringParameter) getValue() string {
+	return *p.value
+}
+
+func newStringParam(commandLineFlag, name, filePlaceholder, defaultValue string) stringParameter {
 	valueFlag := flag.String(commandLineFlag, defaultValue, name)
-	return parameter{
+	return stringParameter{
+		commandLineFlag: commandLineFlag,
+		name:            name,
+		filePlaceholder: filePlaceholder,
+		defaultValue:    defaultValue,
+		value:           valueFlag,
+	}
+}
+
+type intParameter struct {
+	commandLineFlag string
+	name            string
+	filePlaceholder string
+	defaultValue    int
+	value           *int
+}
+
+func (p intParameter) getName() string {
+	return p.name
+}
+
+func (p intParameter) getFilePlaceholder() string {
+	return p.filePlaceholder
+}
+
+func (p intParameter) getValue() string {
+	return strconv.Itoa(*p.value)
+}
+
+func newIntParam(commandLineFlag, name, filePlaceholder string, defaultValue int) intParameter {
+	valueFlag := flag.Int(commandLineFlag, defaultValue, name)
+	return intParameter{
 		commandLineFlag: commandLineFlag,
 		name:            name,
 		filePlaceholder: filePlaceholder,
@@ -55,8 +107,8 @@ func updatePlaceholders(filename string, placeholders []parameter) {
 	fileContent := readFile(filename)
 	log.Println("Updating placeholders in file content...")
 	for _, p := range placeholders {
-		fileContent = strings.Replace(fileContent, p.filePlaceholder, *p.value, -1)
-		log.Printf("Set value of '%v': %v\n", p.name, *p.value)
+		fileContent = strings.Replace(fileContent, p.getFilePlaceholder(), p.getValue(), -1)
+		log.Printf("Set value of '%v': %v\n", p.getName(), p.getValue())
 	}
 	writeFile(filename, fileContent)
 }
