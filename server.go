@@ -3,29 +3,37 @@ package main
 import (
 	"flag"
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 )
 
+const templateFilename = "index.html.tmpl"
 const indexFilename = "index.html"
 
 func main() {
+	maxNameLength := 3
 	parameters := []parameter{
-		newStringParam("v", "docsify version", "{{v}}", "latest"),
-		newStringParam("t", "title string", "{{t}}", "Dokumentation"),
-		newStringParam("l", "html lang param", "{{l}}", "de"),
-		newStringParam("sp", "search placeholder", "{{sp}}", "Suche"),
-		newStringParam("spe", "empty search result text", "{{spe}}", "Keine Ergebnisse gefunden"),
-		newIntParam("sie", "search index expiration time in millis", "'{{sie}}'", 3600000),
-		newStringParam("sin", "search index namespace", "{{sin}}", "docsify-base-namespace"),
+		newStringParam("v", "latest", "docsify version"),
+		newStringParam("t", "Dokumentation", "title string"),
+		newStringParam("l", "de", "html lang param"),
+		newStringParam("sp", "Suche", "search placeholder"),
+		newStringParam("spe", "Keine Ergebnisse gefunden", "empty search result text"),
+		newIntParam("sie", 3600000, "search index expiration time in millis"),
+		newStringParam("sin", "docsify-base-namespace", "search index namespace"),
 	}
 	portFlag := flag.Int("p", 80, "port to listen on")
+	log.Println("Reading parameters...")
 	flag.Parse()
 
-	updatePlaceholders(indexFilename, parameters)
+	flag.VisitAll(func(f *flag.Flag) {
+		log.Printf("%-*s = %s\n", maxNameLength, f.Name, f.Value.String())
+	})
+
+	log.Printf("Generating %s...", indexFilename)
+	generateHTML(parameters)
 
 	port := *portFlag
 	http.Handle("/", http.FileServer(http.Dir(".")))
@@ -35,98 +43,52 @@ func main() {
 	}
 }
 
-type parameter interface {
-	getName() string
-	getFilePlaceholder() string
-	getValue() string
-}
+func generateHTML(parameters []parameter) {
+	tp := template.Must(template.ParseFiles(templateFilename))
 
-type stringParameter struct {
-	commandLineFlag string
-	name            string
-	filePlaceholder string
-	defaultValue    string
-	value           *string
-}
-
-func (p stringParameter) getName() string {
-	return p.name
-}
-
-func (p stringParameter) getFilePlaceholder() string {
-	return p.filePlaceholder
-}
-
-func (p stringParameter) getValue() string {
-	return *p.value
-}
-
-func newStringParam(commandLineFlag, name, filePlaceholder, defaultValue string) stringParameter {
-	valueFlag := flag.String(commandLineFlag, defaultValue, name)
-	return stringParameter{
-		commandLineFlag: commandLineFlag,
-		name:            name,
-		filePlaceholder: filePlaceholder,
-		defaultValue:    defaultValue,
-		value:           valueFlag,
-	}
-}
-
-type intParameter struct {
-	commandLineFlag string
-	name            string
-	filePlaceholder string
-	defaultValue    int
-	value           *int
-}
-
-func (p intParameter) getName() string {
-	return p.name
-}
-
-func (p intParameter) getFilePlaceholder() string {
-	return p.filePlaceholder
-}
-
-func (p intParameter) getValue() string {
-	return strconv.Itoa(*p.value)
-}
-
-func newIntParam(commandLineFlag, name, filePlaceholder string, defaultValue int) intParameter {
-	valueFlag := flag.Int(commandLineFlag, defaultValue, name)
-	return intParameter{
-		commandLineFlag: commandLineFlag,
-		name:            name,
-		filePlaceholder: filePlaceholder,
-		defaultValue:    defaultValue,
-		value:           valueFlag,
-	}
-}
-
-func updatePlaceholders(filename string, placeholders []parameter) {
-	fileContent := readFile(filename)
-	log.Println("Updating placeholders in file content...")
-	for _, p := range placeholders {
-		fileContent = strings.Replace(fileContent, p.getFilePlaceholder(), p.getValue(), -1)
-		log.Printf("Set value of '%v': %v\n", p.getName(), p.getValue())
-	}
-	writeFile(filename, fileContent)
-}
-
-func readFile(filename string) string {
-	log.Printf("Reading file '%s'...\n", filename)
-	bytes, err := os.ReadFile(filename)
+	outputFile, err := os.OpenFile(indexFilename, os.O_RDWR|os.O_TRUNC, os.ModePerm)
 	if err != nil {
 		log.Fatal(err)
 	}
-	return string(bytes)
-}
+	defer outputFile.Close()
 
-func writeFile(filename string, content string) {
-	log.Printf("Writing file '%s'...\n", filename)
-	bytes := []byte(content)
-	err := os.WriteFile(filename, bytes, os.ModePerm)
-	if err != nil {
+	if err := tp.Execute(outputFile, toMap(parameters)); err != nil {
 		log.Fatal(err)
 	}
+}
+
+type parameter struct {
+	name           string
+	getValueString func() string
+	description    string
+}
+
+func newStringParam(name, defaultValue, description string) parameter {
+	valueFlag := flag.String(name, defaultValue, description)
+	return parameter{
+		name: name,
+		getValueString: func() string {
+			return *valueFlag
+		},
+		description: description,
+	}
+}
+
+func newIntParam(name string, defaultValue int, description string) parameter {
+	valueFlag := flag.Int(name, defaultValue, description)
+	return parameter{
+		name: name,
+		getValueString: func() string {
+			return strconv.Itoa(*valueFlag)
+		},
+		description: description,
+	}
+}
+
+func toMap(parameters []parameter) map[string]string {
+	m := make(map[string]string)
+	for _, p := range parameters {
+		m[p.name] = p.getValueString()
+	}
+	return m
 }
